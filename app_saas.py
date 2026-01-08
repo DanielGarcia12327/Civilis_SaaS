@@ -112,7 +112,7 @@ else:
         st.caption("Ambiente Jurídico Seguro v1.0 MVP")
         
         with st.form("login_form"):
-            user_input = st.text_input("Usuário Licenciado")
+            user_input = st.text_input("Usuário")
             pass_input = st.text_input("Chave de Acesso", type="password")
             submitted = st.form_submit_button("Entrar no Sistema", use_container_width=True)
             
@@ -167,7 +167,7 @@ def ler_pdfs(arquivos):
 
 texto_pdfs = ler_pdfs(arquivos_pdf) if arquivos_pdf else ""
 
-st.title("⚖️ CIVILIS IA | Jurídico Sênior")
+st.title("⚖️ CIVILIS IA | Especialista Jurídico")
 st.caption("Plataforma de Inteligência Jurídica Exclusiva")
 
 if "messages" not in st.session_state:
@@ -202,4 +202,5 @@ if prompt:
             placeholder.write(response.text)
             st.session_state.messages.append({"role": "model", "content": response.text})
         except Exception as e:
+
             placeholder.error(f"Erro: {e}")
