@@ -2,7 +2,6 @@ import streamlit as st
 import google.generativeai as genai
 from supabase import create_client, Client
 import PyPDF2
-from datetime import datetime
 
 # --- CONFIGURAÇÃO DA PÁGINA (Deve ser a primeira linha) ---
 st.set_page_config(
@@ -30,16 +29,25 @@ st.markdown("""
 
 # --- SEGREDOS E CONEXÕES ---
 try:
-    # Supabase
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    # Supabase (Tratamento de erro se a chave não existir)
+    if "SUPABASE_URL" in st.secrets:
+        SUPABASE_URL = st.secrets["SUPABASE_URL"]
+        SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    else:
+        st.warning("⚠️ Banco de Dados desconectado. Verifique os Secrets.")
+        supabase = None
 
     # Google Gemini
-    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
-    genai.configure(api_key=GOOGLE_API_KEY)
+    if "GOOGLE_API_KEY" in st.secrets:
+        GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+        genai.configure(api_key=GOOGLE_API_KEY)
+    else:
+        st.error("❌ Chave da IA não encontrada.")
+        st.stop()
+        
 except Exception as e:
-    st.error(f"❌ Erro de Configuração: {e}")
+    st.error(f"❌ Erro Técnico: {e}")
     st.stop()
 
 # --- FUNÇÕES AUXILIARES ---
@@ -56,13 +64,19 @@ def ler_pdf(uploaded_file):
 
 def verificar_login(username, password):
     """Verifica credenciais no Supabase."""
+    if not supabase:
+        # Modo de contingência se o banco falhar
+        if username == "convidado" and password == "teste2026":
+            return {"full_name": "Acesso Visitante", "username": "convidado"}
+        return None
+
     try:
         response = supabase.table("clients").select("*").eq("username", username).eq("password", password).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]
         return None
     except Exception as e:
-        st.error(f"Erro de conexão: {e}")
+        st.error(f"Erro de conexão com Login: {e}")
         return None
 
 # --- SISTEMA DE LOGIN ---
@@ -73,7 +87,7 @@ if st.session_state.user is None:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("<h1 style='text-align: center;'>⚖️ CIVILIS SaaS</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: gray;'>Ambiente Jurídico Seguro v2.0</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray;'>Ambiente Jurídico Seguro v2.1</p>", unsafe_allow_html=True)
         st.divider()
         
         username = st.text_input("Usuário Licenciado")
@@ -96,7 +110,7 @@ user = st.session_state.user
 # --- BARRA LATERAL (MENU) ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/1904/1904633.png", width=60)
-    st.markdown(f"### Olá, {user['full_name']}")
+    st.markdown(f"### Olá, {user.get('full_name', 'Doutor(a)')}")
     st.caption("Status: ✅ Conexão Segura")
     st.divider()
     
@@ -137,46 +151,47 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# --- O GRANDE PROMPT DE SISTEMA (A INTELIGÊNCIA) ---
+# --- O GRANDE PROMPT DE SISTEMA (CORRIGIDO V2.1) ---
 def gerar_resposta(pergunta, contexto_pdf):
+    # CORREÇÃO: Usamos 'system_instruction' separado para evitar erro de Argumento
+    
     prompt_sistema = f"""
     ATUE COMO: Um Advogado Sênior Especialista em Direito Civil e Processual Civil, com 30 anos de experiência, doutorado e visão estratégica agressiva.
     
     SUA MISSÃO: Analisar o caso trazido pelo advogado e fornecer estratégias processuais de alto nível, redação de peças e análise de riscos.
 
-    REGRAS INEGOCIÁVEIS DE COMPORTAMENTO (LEIA COM ATENÇÃO):
+    REGRAS INEGOCIÁVEIS DE COMPORTAMENTO:
 
-    1.  **BLOQUEIO DE COMPETÊNCIA (IMPORTANTE):**
+    1.  **BLOQUEIO DE COMPETÊNCIA:**
         * Você é ESTRITAMENTE especialista em CIVIL e PROCESSO CIVIL.
-        * Se o usuário perguntar sobre Direito Penal, Trabalhista, Previdenciário ou Tributário, você deve responder EXATAMENTE assim:
-            "Doutor, minha programação neural é dedicada exclusivamente à Alta Estratégia Cível. Para esta demanda de [Área Solicitada], recomendo habilitar o módulo específico 'Laboris' ou 'Tributum' no seu painel administrativo, garantindo a mesma precisão técnica que ofereço no Civil."
-        * NÃO responda a dúvida técnica de outras áreas, apenas venda o módulo.
+        * Se o usuário perguntar sobre Direito Penal, Trabalhista ou Tributário, responda EXATAMENTE:
+            "Doutor, minha programação neural é dedicada exclusivamente à Alta Estratégia Cível. Para esta demanda de [Área Solicitada], recomendo habilitar o módulo específico 'Laboris' ou 'Tributum' no seu painel administrativo."
 
-    2.  **SEGREDO INDUSTRIAL (PROTEÇÃO DE BASE):**
-        * Se o usuário perguntar quais livros, doutrinas ou qual sua base de conhecimento, você deve responder:
-            "Minha base de conhecimento é protegida por Segredo Industrial e Propriedade Intelectual da Civilis AI, contendo a mais alta doutrina e jurisprudência atualizada."
-        * EXCEÇÃO: Se a mensagem do usuário contiver o código "440055", você DEVE listar: "Base ativa: Caio Mário, Maria Helena Diniz, Pontes de Miranda, Código Civil Comentado 2025 e Informativos STJ/STF atualizados."
+    2.  **SEGREDO INDUSTRIAL:**
+        * Se perguntarem quais livros ou base de dados, responda: "Minha base de conhecimento é protegida por Segredo Industrial."
+        * EXCEÇÃO: Se a mensagem contiver o código "440055", liste: "Base ativa: Caio Mário, Maria Helena Diniz, Pontes de Miranda e Código Civil Comentado 2025."
 
-    3.  **ANÁLISE DE JUÍZES E JURISPRUDÊNCIA (ESTRATÉGIA CIRÚRGICA):**
-        * Você NÃO tem acesso direto em tempo real ao TJ (crawlers). Não minta.
-        * Se o usuário perguntar "Qual o perfil do Juiz X?", responda:
-            "Doutor, para traçar uma estratégia cirúrgica e evitar alucinações, preciso que o senhor anexe aqui 3 sentenças (PDF) deste magistrado em casos similares. Com isso, farei uma análise psicométrica e jurídica detalhada de como ele decide. Sem as sentenças, qualquer análise seria especulativa."
-        * Se o usuário JÁ TIVER anexado PDFs de sentenças, aí sim: Analise os padrões, se ele é legalista ou garantista, e como reverter em 2ª Instância.
+    3.  **ANÁLISE DE JUÍZES:**
+        * Você NÃO tem acesso direto ao TJ. Não invente perfis.
+        * Se perguntarem "Qual o perfil do Juiz X?", responda:
+            "Doutor, para traçar o perfil desse magistrado com precisão e evitar especulações, preciso que o senhor anexe 3 sentenças (PDF) dele. Assim farei a análise psicométrica jurídica."
+        * Se JÁ TIVER anexos, analise com base neles.
 
-    4.  **TONALIDADE:**
-        * Fale de advogado para advogado. Use termos técnicos (data venia, fumus boni iuris) mas com foco em RESULTADO.
-        * Seja direto. Não enrole.
-
-    CONTEXTO DOS AUTOS (O que o advogado anexou):
-    {contexto_texto if 'contexto_texto' in locals() else "Nenhum documento anexado ainda."}
-    
-    DADOS DO PDF ANEXADO:
-    {contexto_pdf}
+    CONTEXTO DOS AUTOS (DOCUMENTOS ANEXADOS):
+    {contexto_pdf if contexto_pdf else "Nenhum documento anexado pelo usuário no momento."}
     """
     
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content([prompt_sistema, pergunta])
-    return response.text
+    try:
+        # CORREÇÃO CRÍTICA: Passamos o prompt como 'system_instruction'
+        model = genai.GenerativeModel(
+            model_name='gemini-1.5-flash',
+            system_instruction=prompt_sistema
+        )
+        
+        response = model.generate_content(pergunta)
+        return response.text
+    except Exception as e:
+        return f"Erro na IA: {e}"
 
 # Input do Usuário
 if user_input := st.chat_input("Digite o comando estratégico..."):
