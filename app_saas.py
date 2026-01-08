@@ -1,27 +1,24 @@
 import streamlit as st
-import google.generativeai as genai
+from groq import Groq
 from supabase import create_client, Client
 import PyPDF2
 import time
 
 # --- 1. CONFIGURAÇÃO VISUAL ---
-st.set_page_config(
-    page_title="CIVILIS IA | Corporativo",
-    page_icon="⚖️",
-    layout="wide"
-)
+st.set_page_config(page_title="CIVILIS IA | Llama 3", layout="wide")
 
 # --- 2. CONEXÃO SEGURA ---
 try:
+    # Banco de Dados
     if "SUPABASE_URL" in st.secrets:
         supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-    else:
-        supabase = None
+    else: supabase = None
 
-    if "GOOGLE_API_KEY" in st.secrets:
-        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    # NOVO MOTOR: GROQ
+    if "GROQ_API_KEY" in st.secrets:
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     else:
-        st.error("❌ ERRO CRÍTICO: Chave API ausente.")
+        st.error("❌ ERRO DE CONFIGURAÇÃO: A variável 'GROQ_API_KEY' não foi encontrada nos Secrets.")
         st.stop()
 except Exception as e:
     st.error(f"Erro de Conexão: {e}")
@@ -44,9 +41,10 @@ if not st.session_state.user:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.title("⚖️ CIVILIS SaaS")
-        u = st.text_input("Usuário Licenciado")
-        p = st.text_input("Chave de Acesso", type="password")
-        if st.button("Entrar", type="primary", use_container_width=True):
+        st.caption("Motor: Groq® Llama 3 (Ultra Rápido)")
+        u = st.text_input("Usuário")
+        p = st.text_input("Senha", type="password")
+        if st.button("Acessar Sistema", type="primary", use_container_width=True):
             user = verificar_login(u, p)
             if user:
                 st.session_state.user = user
@@ -57,8 +55,8 @@ if not st.session_state.user:
 # --- 4. APP PRINCIPAL ---
 st.title("⚖️ CIVILIS IA | Estratégia")
 with st.sidebar:
-    st.write("---")
-    uploaded = st.file_uploader("Anexar Autos (PDF)", type="pdf", accept_multiple_files=True)
+    st.header("📂 Autos Digitais")
+    uploaded = st.file_uploader("Anexar PDF", type="pdf", accept_multiple_files=True)
     contexto = ""
     if uploaded:
         for pdf in uploaded:
@@ -66,14 +64,14 @@ with st.sidebar:
                 r = PyPDF2.PdfReader(pdf)
                 for page in r.pages: contexto += page.extract_text()
             except: pass
-        st.success("Autos lidos!")
+        st.success(f"Lidos {len(uploaded)} arquivos.")
     if st.button("Sair"):
         st.session_state.user = None
         st.rerun()
 
-# --- 5. CHAT COM GEMINI 1.5 FLASH (GARANTIDO) ---
+# --- 5. CHAT INTELIGENTE ---
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "Doutor, qual a estratégia de hoje?"}]
+    st.session_state.messages = [{"role": "assistant", "content": "Sistema Online. Doutor, qual a estratégia?"}]
 
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
@@ -82,25 +80,29 @@ if prompt := st.chat_input("Digite aqui..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
     
-    # REGRAS DO SISTEMA
-    sistema = f"""
-    ATUE COMO: Advogado Sênior Civilista.
+    # CÉREBRO JURÍDICO
+    system_prompt = f"""
+    ATUE COMO: Advogado Sênior Especialista em Civil.
     REGRAS:
-    1. Penal/Trabalhista -> RECUSE e venda módulo extra.
+    1. Penal/Trabalhista -> RECUSE.
     2. Livros -> NEGUE (Segredo Industrial). Senha '440055' libera.
-    3. Perfil de Juiz -> EXIJA 3 sentenças.
-    
+    3. Perfil Juiz -> PEÇA 3 sentenças.
     CONTEXTO: {contexto}
     """
     
     with st.chat_message("assistant"):
-        with st.spinner("Analisando..."):
+        with st.spinner("Processando..."):
             try:
-                # AQUI ESTÁ A CORREÇÃO: Usamos o 1.5 Flash
-                model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=sistema)
-                response = model.generate_content(prompt)
-                
-                st.markdown(response.text)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
+                chat_completion = client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    model="llama-3.3-70b-versatile",
+                    temperature=0.3,
+                )
+                resposta = chat_completion.choices[0].message.content
+                st.markdown(resposta)
+                st.session_state.messages.append({"role": "assistant", "content": resposta})
             except Exception as e:
-                st.error(f"Erro: {e}")
+                st.error(f"Erro Groq: {e}")
