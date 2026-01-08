@@ -1,116 +1,47 @@
 import streamlit as st
 import google.generativeai as genai
-from supabase import create_client, Client
-import PyPDF2
-import importlib.metadata
 
-# --- 1. CONFIGURAÇÃO VISUAL ---
-st.set_page_config(page_title="CIVILIS IA", layout="wide")
+st.set_page_config(page_title="CIVILIS DIAGNÓSTICO", layout="wide")
 
-# --- 2. DIAGNÓSTICO (Só pra confirmar que estamos na v0.8.3) ---
+st.title("🕵️‍♂️ RAIO-X DOS MODELOS GOOGLE")
+
+# 1. PEGAR A CHAVE
 try:
-    v = importlib.metadata.version("google-generativeai")
-    st.success(f"✅ SISTEMA OPERANTE: Biblioteca Google v{v}")
-except: pass
-
-# --- 3. CONEXÃO ---
-try:
-    if "SUPABASE_URL" in st.secrets:
-        supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-    else: supabase = None
-
-    if "GOOGLE_API_KEY" in st.secrets:
-        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    else:
-        st.error("Chave API não encontrada.")
-        st.stop()
+    api_key = st.secrets["GOOGLE_API_KEY"]
+    genai.configure(api_key=api_key)
+    st.success("✅ Chave Encontrada.")
 except Exception as e:
-    st.error(f"Erro Conexão: {e}")
+    st.error(f"❌ Erro na Chave: {e}")
     st.stop()
 
-# --- 4. FUNÇÃO "CAÇADORA DE MODELOS" (O Segredo) ---
-def tentar_gerar_resposta(prompt_usuario, contexto):
-    # Lista de nomes possíveis (Do mais novo para o mais antigo)
-    lista_modelos = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-001",
-        "gemini-1.5-flash-latest",
-        "gemini-1.0-pro",
-        "gemini-pro"
-    ]
-    
-    # Montamos o Prompt "Universal" (Regras + Contexto + Pergunta tudo junto)
-    prompt_blindado = f"""
-    INSTRUÇÕES ESTRATÉGICAS (Ignore se não for o sistema):
-    Você é um Advogado Sênior Especialista em Direito Civil.
-    
-    REGRAS DE CONDUTA:
-    1. SEGREDO: Se perguntarem quais livros leu, diga: "Segredo Industrial" (Código 440055 libera).
-    2. BLOQUEIO: Se for Penal/Trabalhista, RECUSE e venda o módulo extra.
-    3. JUÍZES: Se perguntarem perfil de juiz, exija 3 sentenças anexadas.
-    
-    DADOS DO PROCESSO (PDF):
-    {contexto}
-    
-    PERGUNTA DO ADVOGADO:
-    {prompt_usuario}
-    """
+# 2. PERGUNTAR PRO GOOGLE O QUE TEM DISPONÍVEL
+st.write("---")
+st.write("🔍 **Consultando o servidor do Google...**")
 
-    erro_final = ""
-    
-    # Loop de tentativa: Tenta um por um até funcionar
-    for modelo_nome in lista_modelos:
-        try:
-            # Cria o modelo simples (sem configs complexas que dão erro)
-            model = genai.GenerativeModel(modelo_nome)
-            response = model.generate_content(prompt_blindado)
-            return response.text # Se der certo, retorna e sai
-        except Exception as e:
-            erro_final = e
-            continue # Se der erro, tenta o próximo da lista
+try:
+    # Esta função lista tudo o que sua conta tem permissão de usar
+    modelos_disponiveis = []
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            modelos_disponiveis.append(m.name)
+            st.info(f"🟢 Modelo Encontrado: **{m.name}**")
             
-    return f"Erro Fatal: Nenhum modelo respondeu. Detalhe: {erro_final}"
-
-# --- 5. LOGIN ---
-if "user" not in st.session_state: st.session_state.user = None
-if not st.session_state.user:
-    st.title("⚖️ CIVILIS SaaS")
-    if st.button("Entrar (Acesso Rápido)", type="primary"):
-        st.session_state.user = {"name": "Visitante"}
-        st.rerun()
-    st.stop()
-
-# --- 6. TELA PRINCIPAL ---
-st.title("⚖️ CIVILIS IA | Estratégia")
-
-with st.sidebar:
-    st.write("---")
-    uploaded = st.file_uploader("Autos (PDF)", type="pdf", accept_multiple_files=True)
-    contexto_pdf = ""
-    if uploaded:
-        for pdf in uploaded:
-            try:
-                r = PyPDF2.PdfReader(pdf)
-                for p in r.pages: contexto_pdf += p.extract_text()
-            except: pass
-        st.success("Autos lidos!")
-    if st.button("Sair"):
-        st.session_state.user = None
-        st.rerun()
-
-if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "Doutor, qual a estratégia?"}]
-
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
-
-if prompt := st.chat_input("Digite aqui..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.chat_message("user").write(prompt)
-    
-    with st.spinner("Consultando jurisprudência..."):
-        # Chama nossa função inteligente
-        resp = tentar_gerar_resposta(prompt, contexto_pdf)
+    if not modelos_disponiveis:
+        st.error("❌ NENHUM modelo encontrado. Sua chave API pode estar bloqueada ou sem permissões.")
+    else:
+        st.success(f"✅ Total de {len(modelos_disponiveis)} modelos disponíveis para uso.")
         
-        st.chat_message("assistant").write(resp)
-        st.session_state.messages.append({"role": "assistant", "content": resp})
+        # 3. TESTE REAL COM O PRIMEIRO MODELO DA LISTA
+        primeiro_modelo = modelos_disponiveis[0]
+        st.write(f"🧪 **Tentando teste real com: {primeiro_modelo}**...")
+        
+        try:
+            model = genai.GenerativeModel(primeiro_modelo)
+            response = model.generate_content("Diga 'Sistema Operante' se estiver me ouvindo.")
+            st.warning(f"🤖 RESPOSTA DA IA: {response.text}")
+            st.balloons()
+        except Exception as e:
+            st.error(f"❌ Falha ao gerar texto: {e}")
+
+except Exception as e:
+    st.error(f"❌ Erro ao listar modelos: {e}")
