@@ -2,20 +2,11 @@ import streamlit as st
 import google.generativeai as genai
 from supabase import create_client, Client
 import PyPDF2
-import time
 
-# --- CONFIGURAÇÃO ---
-st.set_page_config(page_title="CIVILIS IA | Corporativo", layout="wide")
+# 1. CONFIGURAÇÃO
+st.set_page_config(page_title="CIVILIS IA", layout="wide")
 
-# --- ESTILO ---
-st.markdown("""
-<style>
-    [data-testid="stSidebar"] { background-color: #0e1117; }
-    .stChatInputContainer textarea { background-color: #2b313e; color: white; }
-</style>
-""", unsafe_allow_html=True)
-
-# --- CONEXÃO ---
+# 2. CONEXÃO
 try:
     if "SUPABASE_URL" in st.secrets:
         supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -25,13 +16,13 @@ try:
     if "GOOGLE_API_KEY" in st.secrets:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     else:
-        st.error("❌ Chave API não encontrada.")
+        st.error("ERRO: Chave API do Google não encontrada.")
         st.stop()
 except Exception as e:
     st.error(f"Erro de Conexão: {e}")
     st.stop()
 
-# --- LOGIN ---
+# 3. LOGIN
 def verificar_login(username, password):
     if username == "convidado" and password == "teste2026":
         return {"full_name": "Visitante VIP"}
@@ -58,20 +49,18 @@ if not st.session_state.user:
             else: st.error("Acesso Negado")
     st.stop()
 
-# --- APLICATIVO ---
+# 4. APP PRINCIPAL
 with st.sidebar:
     st.write("---")
-    st.write("📂 **Autos do Processo**")
-    uploaded = st.file_uploader("Anexar PDF", type="pdf", accept_multiple_files=True)
-    contexto = ""
+    uploaded = st.file_uploader("Anexar Autos (PDF)", type="pdf", accept_multiple_files=True)
+    contexto_pdf = ""
     if uploaded:
         for pdf in uploaded:
             try:
                 reader = PyPDF2.PdfReader(pdf)
-                for page in reader.pages: contexto += page.extract_text()
-                contexto += f"\nDoc: {pdf.name}\n"
+                for page in reader.pages: contexto_pdf += page.extract_text()
             except: pass
-        st.success("Docs Anexados!")
+        st.success("PDFs Processados!")
     if st.button("Sair"):
         st.session_state.user = None
         st.rerun()
@@ -88,33 +77,25 @@ if prompt := st.chat_input("Digite aqui..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
     
-    # LÓGICA DO CÉREBRO JURÍDICO
+    # CÉREBRO JURÍDICO
     sistema = f"""
     ATUE COMO: Advogado Especialista em Civil.
     REGRAS:
-    1. Se for Penal/Trabalhista -> RECUSE e mande contratar módulo extra.
-    2. Se pedir livros -> NEGUE (Segredo Industrial). Senha '440055' libera.
-    3. Se perguntar de Juiz -> PEÇA 3 SENTENÇAS ANEXADAS.
+    1. Se for Penal/Trabalhista: RECUSE e mande contratar módulo extra.
+    2. Se pedir livros: NEGUE (Segredo Industrial). Senha '440055' libera.
+    3. Se perguntar de Juiz: Peça 3 sentenças anexadas.
     
-    DADOS DO PROCESSO: {contexto}
+    CONTEXTO: {contexto_pdf}
     """
     
-    with st.chat_message("assistant"):
-        placeholder = st.empty()
-        try:
-            # TENTATIVA 1: Modelo Novo (Rápido e Inteligente)
-            model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=sistema)
-            resp = model.generate_content(prompt).text
-        except Exception as e:
-            # TENTATIVA 2: Estepe (Modelo Clássico) - Se o 1 falhar, usa esse
-            try:
-                placeholder.warning("⚠️ Servidor desatualizado. Usando modelo de backup...")
-                model = genai.GenerativeModel("gemini-pro") # Modelo antigo que nunca falha
-                # Gemini Pro antigo não aceita system_instruction direto, então adaptamos:
-                full_prompt = f"{sistema}\n\nPERGUNTA DO ADVOGADO: {prompt}"
-                resp = model.generate_content(full_prompt).text
-            except Exception as e2:
-                resp = f"Erro Fatal: {e2}"
-
-        placeholder.markdown(resp)
-        st.session_state.messages.append({"role": "assistant", "content": resp})
+    try:
+        # AQUI ESTÁ O SEGREDO: Usamos 'gemini-1.5-flash'
+        # E usamos a sintaxe simplificada que nunca falha
+        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=sistema)
+        response = model.generate_content(prompt)
+        
+        st.session_state.messages.append({"role": "assistant", "content": response.text})
+        st.chat_message("assistant").write(response.text)
+        
+    except Exception as e:
+        st.error(f"Erro na IA: {e}")
