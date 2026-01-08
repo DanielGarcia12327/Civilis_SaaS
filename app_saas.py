@@ -184,7 +184,7 @@ def gerar_resposta(pergunta, contexto_pdf):
     try:
         # CORREÇÃO CRÍTICA: Passamos o prompt como 'system_instruction'
         model = genai.GenerativeModel(
-            model_name='gemini-1.5-flash',
+            model_name='gemini-1.5-flash-latest',
             system_instruction=prompt_sistema
         )
         
@@ -208,3 +208,4 @@ if user_input := st.chat_input("Digite o comando estratégico..."):
     
     # Salvar resposta
     st.session_state.messages.append({"role": "assistant", "content": resposta})
+
