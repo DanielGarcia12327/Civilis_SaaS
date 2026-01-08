@@ -1,207 +1,195 @@
 import streamlit as st
+import google.generativeai as genai
 from supabase import create_client, Client
-import uuid
-import time
-from google import genai
-from google.genai import types
 import PyPDF2
+from datetime import datetime
 
-# ==================================================
-# 1. CONFIGURAÇÃO INICIAL (SaaS MODE)
-# ==================================================
-st.set_page_config(page_title="Civilis SaaS | Acesso Restrito", layout="wide")
+# --- CONFIGURAÇÃO DA PÁGINA (Deve ser a primeira linha) ---
+st.set_page_config(
+    page_title="CIVILIS IA | Corporativo",
+    page_icon="⚖️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# --- CREDENCIAIS DO SUPABASE (JÁ CONFIGURADAS) ---
-SUPABASE_URL = "https://otqdqdmggxtczruipley.supabase.co"
-SUPABASE_KEY = "sb_publishable_frd8g5qFAL1eTXexbZniDg_ZEF1SYKC"
-
-# --- CONEXÃO COM O BANCO ---
-@st.cache_resource
-def init_supabase():
-    try:
-        return create_client(SUPABASE_URL, SUPABASE_KEY)
-    except Exception as e:
-        return None
-
-supabase = init_supabase()
-
-if not supabase:
-    st.error("Erro Crítico: Falha ao conectar no Supabase. Verifique sua internet.")
-    st.stop()
-
-# --- ESTILO PROFISSIONAL (CSS INJETADO) ---
+# --- ESTILO PROFISSIONAL (CSS) ---
 st.markdown("""
 <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .stTextInput input {border-radius: 5px;}
-    div[data-testid="stSidebar"] {background-color: #f0f2f6;}
+    [data-testid="stSidebar"] {
+        background-color: #0e1117;
+        border-right: 1px solid #262730;
+    }
+    .stChatInputContainer textarea {
+        background-color: #2b313e;
+        color: white;
+    }
+    h1 { color: #f0f2f6; }
+    p { font-size: 1.1rem; }
 </style>
 """, unsafe_allow_html=True)
 
-# ==================================================
-# 2. SISTEMA DE SEGURANÇA (SINGLE SESSION)
-# ==================================================
+# --- SEGREDOS E CONEXÕES ---
+try:
+    # Supabase
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def check_session_validity():
-    """Verifica se o token do navegador ainda é o token válido no banco."""
-    if "user_data" in st.session_state:
-        user = st.session_state["user_data"]
-        try:
-            response = supabase.table("clients").select("session_token").eq("username", user['username']).execute()
-            
-            if response.data:
-                db_token = response.data[0]['session_token']
-                local_token = st.session_state.get('session_token')
-                
-                # SE O TOKEN DO BANCO MUDOU, ALGUÉM LOGOU EM OUTRO LUGAR!
-                if db_token and local_token and db_token != local_token:
-                    st.session_state.clear()
-                    st.error("⚠️ SESSÃO DERRUBADA!")
-                    st.warning("Sua conta foi acessada em outro dispositivo. Por segurança, desconectamos esta sessão.")
-                    if st.button("Reconectar Agora"):
-                        st.rerun()
-                    st.stop()
-        except Exception:
-            pass 
-
-def login_procedure(username, password):
-    """Realiza o login e DERRUBA quem estiver logado antes."""
-    try:
-        # 1. Busca usuário e senha
-        response = supabase.table("clients").select("*").eq("username", username).eq("password", password).execute()
-        
-        if len(response.data) > 0:
-            user = response.data[0]
-            
-            # 2. GERA NOVO TOKEN DE SESSÃO (Isso derruba o anterior)
-            new_token = str(uuid.uuid4())
-            
-            # 3. Atualiza no Banco
-            supabase.table("clients").update({"session_token": new_token}).eq("username", username).execute()
-            
-            # 4. Salva na Sessão Local
-            st.session_state["authenticated"] = True
-            st.session_state["user_data"] = user
-            st.session_state["session_token"] = new_token
-            
-            st.success(f"Login Autorizado. Iniciando Ambiente Seguro...")
-            time.sleep(1)
-            st.rerun()
-        else:
-            st.error("⛔ Acesso Negado. Usuário ou senha incorretos.")
-    except Exception as e:
-        st.error(f"Erro de conexão com o servidor: {e}")
-
-# ==================================================
-# 3. TELA DE LOGIN (PORTÃO DE ENTRADA)
-# ==================================================
-
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-if st.session_state["authenticated"]:
-    check_session_validity()
-else:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.write("")
-        st.write("")
-        st.markdown("## ⚖️ Civilis IA | Acesso Corporativo")
-        st.caption("Ambiente Jurídico Seguro v1.0 MVP")
-        
-        with st.form("login_form"):
-            user_input = st.text_input("Usuário")
-            pass_input = st.text_input("Chave de Acesso", type="password")
-            submitted = st.form_submit_button("Entrar no Sistema", use_container_width=True)
-            
-            if submitted:
-                login_procedure(user_input, pass_input)
-            
-        st.info("Credenciais de Teste: admin / 123")
-    
+    # Google Gemini
+    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+    genai.configure(api_key=GOOGLE_API_KEY)
+except Exception as e:
+    st.error(f"❌ Erro de Configuração: {e}")
     st.stop()
 
-# ==================================================
-# 4. O SISTEMA (AGENTE CIVILIS)
-# ==================================================
+# --- FUNÇÕES AUXILIARES ---
+def ler_pdf(uploaded_file):
+    """Extrai texto de arquivos PDF."""
+    try:
+        reader = PyPDF2.PdfReader(uploaded_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text()
+        return text
+    except Exception as e:
+        return f"Erro ao ler PDF: {e}"
 
-API_KEY = "AIzaSyDCgTiiPthpnH6jdH4d7hH2EoHmRj-nzwk" 
+def verificar_login(username, password):
+    """Verifica credenciais no Supabase."""
+    try:
+        response = supabase.table("clients").select("*").eq("username", username).eq("password", password).execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+        return None
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
+        return None
 
-INSTRUCOES_DO_SISTEMA = """
-IDENTIDADE: Civilis IA (SaaS Version).
-ROLE: Advogado Sênior e Estrategista Processual.
-DIRETRIZES:
-1. Respostas diretas e técnicas.
-2. Formato: Relatório de Risco seguido da Peça/Minuta.
-3. PROIBIDO: Markdown (negrito, titulos com #). Use CAIXA ALTA para títulos.
-"""
+# --- SISTEMA DE LOGIN ---
+if "user" not in st.session_state:
+    st.session_state.user = None
 
-try:
-    client = genai.Client(api_key=API_KEY)
-except Exception as e:
-    st.error(f"Erro de conexão com o motor de IA: {e}")
+if st.session_state.user is None:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("<h1 style='text-align: center;'>⚖️ CIVILIS SaaS</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray;'>Ambiente Jurídico Seguro v2.0</p>", unsafe_allow_html=True)
+        st.divider()
+        
+        username = st.text_input("Usuário Licenciado")
+        password = st.text_input("Chave de Acesso", type="password")
+        
+        if st.button("Entrar no Sistema", type="primary", use_container_width=True):
+            user = verificar_login(username, password)
+            if user:
+                st.session_state.user = user
+                st.rerun()
+            else:
+                st.error("Credenciais inválidas ou acesso revogado.")
+        
+        st.info("Credencial de Teste: convidado / teste2026")
+    st.stop()
 
+# --- ÁREA LOGADA (SÓ ENTRA AQUI SE TIVER LOGADO) ---
+user = st.session_state.user
+
+# --- BARRA LATERAL (MENU) ---
 with st.sidebar:
-    st.success(f"👤 Licenciado: {st.session_state['user_data']['full_name']}")
-    st.caption(f"ID Sessão: {st.session_state['session_token'][:8]}...")
+    st.image("https://cdn-icons-png.flaticon.com/512/1904/1904633.png", width=60)
+    st.markdown(f"### Olá, {user['full_name']}")
+    st.caption("Status: ✅ Conexão Segura")
+    st.divider()
     
-    if st.button("Sair / Logout"):
-        st.session_state.clear()
-        st.rerun()
+    # SELETOR DE MÓDULOS (Futura Monetização)
+    modulo = st.selectbox("Módulo Ativo", ["🔷 Direito Civil (Civilis)", "🔒 Trabalhista (Bloqueado)", "🔒 Tributário (Bloqueado)"])
+    
+    if "Bloqueado" in modulo:
+        st.warning(f"O módulo {modulo} não está contratado.")
+        st.info("Entre em contato com o admin para liberar.")
     
     st.divider()
+    
+    # UPLOAD DE ARQUIVOS (Autos)
     st.markdown("### 📂 Autos Digitais")
-    arquivos_pdf = st.file_uploader("Upload de PDF", type=["pdf"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Anexar: Processo, Sentença ou Contrato", type="pdf", accept_multiple_files=True)
+    
+    processo_texto = ""
+    if uploaded_files:
+        for pdf in uploaded_files:
+            texto = ler_pdf(pdf)
+            processo_texto += f"\n--- DOCUMENTO: {pdf.name} ---\n{texto}\n"
+        st.success(f"{len(uploaded_files)} documentos analisados.")
 
-def ler_pdfs(arquivos):
-    texto = ""
-    for arq in arquivos:
-        try:
-            leitor = PyPDF2.PdfReader(arq)
-            for pag in leitor.pages:
-                texto += pag.extract_text()
-        except: pass
-    return texto
+    st.divider()
+    if st.button("Sair / Logout"):
+        st.session_state.user = None
+        st.rerun()
 
-texto_pdfs = ler_pdfs(arquivos_pdf) if arquivos_pdf else ""
+# --- LÓGICA DO CHAT (CÉREBRO) ---
+st.title("⚖️ CIVILIS IA | Estratégia Processual")
+st.markdown("Plataforma de Inteligência Jurídica Exclusiva")
 
-st.title("⚖️ CIVILIS IA | Especialista Jurídico")
-st.caption("Plataforma de Inteligência Jurídica Exclusiva")
-
+# Histórico de Chat
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "model", "content": "Sistema Online. Qual a demanda jurídica de hoje?"}]
+    st.session_state.messages = [{"role": "assistant", "content": "Sistema Online. Doutor, qual o caso concreto ou a estratégia que precisamos definir hoje?"}]
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.write(msg["content"])
+        st.markdown(msg["content"])
 
-prompt = st.chat_input("Digite o comando estratégico...")
-
-if prompt:
-    check_session_validity()
+# --- O GRANDE PROMPT DE SISTEMA (A INTELIGÊNCIA) ---
+def gerar_resposta(pergunta, contexto_pdf):
+    prompt_sistema = f"""
+    ATUE COMO: Um Advogado Sênior Especialista em Direito Civil e Processual Civil, com 30 anos de experiência, doutorado e visão estratégica agressiva.
     
+    SUA MISSÃO: Analisar o caso trazido pelo advogado e fornecer estratégias processuais de alto nível, redação de peças e análise de riscos.
+
+    REGRAS INEGOCIÁVEIS DE COMPORTAMENTO (LEIA COM ATENÇÃO):
+
+    1.  **BLOQUEIO DE COMPETÊNCIA (IMPORTANTE):**
+        * Você é ESTRITAMENTE especialista em CIVIL e PROCESSO CIVIL.
+        * Se o usuário perguntar sobre Direito Penal, Trabalhista, Previdenciário ou Tributário, você deve responder EXATAMENTE assim:
+            "Doutor, minha programação neural é dedicada exclusivamente à Alta Estratégia Cível. Para esta demanda de [Área Solicitada], recomendo habilitar o módulo específico 'Laboris' ou 'Tributum' no seu painel administrativo, garantindo a mesma precisão técnica que ofereço no Civil."
+        * NÃO responda a dúvida técnica de outras áreas, apenas venda o módulo.
+
+    2.  **SEGREDO INDUSTRIAL (PROTEÇÃO DE BASE):**
+        * Se o usuário perguntar quais livros, doutrinas ou qual sua base de conhecimento, você deve responder:
+            "Minha base de conhecimento é protegida por Segredo Industrial e Propriedade Intelectual da Civilis AI, contendo a mais alta doutrina e jurisprudência atualizada."
+        * EXCEÇÃO: Se a mensagem do usuário contiver o código "440055", você DEVE listar: "Base ativa: Caio Mário, Maria Helena Diniz, Pontes de Miranda, Código Civil Comentado 2025 e Informativos STJ/STF atualizados."
+
+    3.  **ANÁLISE DE JUÍZES E JURISPRUDÊNCIA (ESTRATÉGIA CIRÚRGICA):**
+        * Você NÃO tem acesso direto em tempo real ao TJ (crawlers). Não minta.
+        * Se o usuário perguntar "Qual o perfil do Juiz X?", responda:
+            "Doutor, para traçar uma estratégia cirúrgica e evitar alucinações, preciso que o senhor anexe aqui 3 sentenças (PDF) deste magistrado em casos similares. Com isso, farei uma análise psicométrica e jurídica detalhada de como ele decide. Sem as sentenças, qualquer análise seria especulativa."
+        * Se o usuário JÁ TIVER anexado PDFs de sentenças, aí sim: Analise os padrões, se ele é legalista ou garantista, e como reverter em 2ª Instância.
+
+    4.  **TONALIDADE:**
+        * Fale de advogado para advogado. Use termos técnicos (data venia, fumus boni iuris) mas com foco em RESULTADO.
+        * Seja direto. Não enrole.
+
+    CONTEXTO DOS AUTOS (O que o advogado anexou):
+    {contexto_texto if 'contexto_texto' in locals() else "Nenhum documento anexado ainda."}
+    
+    DADOS DO PDF ANEXADO:
+    {contexto_pdf}
+    """
+    
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    response = model.generate_content([prompt_sistema, pergunta])
+    return response.text
+
+# Input do Usuário
+if user_input := st.chat_input("Digite o comando estratégico..."):
+    # Adicionar mensagem do usuário
+    st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
-        st.write(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
+        st.markdown(user_input)
+
+    # Gerar resposta
+    with st.chat_message("assistant"):
+        with st.spinner("Analisando jurisprudência e estratégia..."):
+            resposta = gerar_resposta(user_input, processo_texto)
+            st.markdown(resposta)
     
-    final_prompt = prompt
-    if texto_pdfs:
-        final_prompt = f"Baseado nos arquivos: {texto_pdfs}\n\nPedido: {prompt}"
-
-    with st.chat_message("model"):
-        placeholder = st.empty()
-        placeholder.text("Processando...")
-        try:
-            response = client.models.generate_content(
-                model='gemini-flash-latest', 
-                contents=final_prompt,
-                config=types.GenerateContentConfig(temperature=0.2, system_instruction=INSTRUCOES_DO_SISTEMA)
-            )
-            placeholder.write(response.text)
-            st.session_state.messages.append({"role": "model", "content": response.text})
-        except Exception as e:
-
-            placeholder.error(f"Erro: {e}")
-
+    # Salvar resposta
+    st.session_state.messages.append({"role": "assistant", "content": resposta})
