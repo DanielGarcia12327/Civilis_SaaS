@@ -108,7 +108,7 @@ else:
     with col2:
         st.write("")
         st.write("")
-        st.markdown("## ⚖️ CIVILIS SaaS | Acesso Corporativo")
+        st.markdown("## ⚖️ Civilis IA | Acesso Corporativo")
         st.caption("Ambiente Jurídico Seguro v1.0 MVP")
         
         with st.form("login_form"):
@@ -204,3 +204,4 @@ if prompt:
         except Exception as e:
 
             placeholder.error(f"Erro: {e}")
+
