@@ -1,4 +1,10 @@
 streamlit
-supabase
 groq
-PyPDF2
+langchain
+langchain-community
+langchain-groq
+langchain-huggingface
+faiss-cpu
+pypdf
+sentence-transformers
+python-dotenv
