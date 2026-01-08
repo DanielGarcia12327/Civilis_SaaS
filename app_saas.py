@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 from supabase import create_client, Client
 import PyPDF2
+import time
 
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="CIVILIS IA | Corporativo", layout="wide")
@@ -67,7 +68,7 @@ with st.sidebar:
         for pdf in uploaded:
             try:
                 reader = PyPDF2.PdfReader(pdf)
-                for page in reader.pages: context += page.extract_text()
+                for page in reader.pages: contexto += page.extract_text()
                 contexto += f"\nDoc: {pdf.name}\n"
             except: pass
         st.success("Docs Anexados!")
@@ -98,12 +99,22 @@ if prompt := st.chat_input("Digite aqui..."):
     DADOS DO PROCESSO: {contexto}
     """
     
-    try:
-        # AQUI O NOME CERTO E SIMPLES:
-        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=sistema)
-        resp = model.generate_content(prompt).text
-        
+    with st.chat_message("assistant"):
+        placeholder = st.empty()
+        try:
+            # TENTATIVA 1: Modelo Novo (Rápido e Inteligente)
+            model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=sistema)
+            resp = model.generate_content(prompt).text
+        except Exception as e:
+            # TENTATIVA 2: Estepe (Modelo Clássico) - Se o 1 falhar, usa esse
+            try:
+                placeholder.warning("⚠️ Servidor desatualizado. Usando modelo de backup...")
+                model = genai.GenerativeModel("gemini-pro") # Modelo antigo que nunca falha
+                # Gemini Pro antigo não aceita system_instruction direto, então adaptamos:
+                full_prompt = f"{sistema}\n\nPERGUNTA DO ADVOGADO: {prompt}"
+                resp = model.generate_content(full_prompt).text
+            except Exception as e2:
+                resp = f"Erro Fatal: {e2}"
+
+        placeholder.markdown(resp)
         st.session_state.messages.append({"role": "assistant", "content": resp})
-        st.chat_message("assistant").write(resp)
-    except Exception as e:
-        st.error(f"Erro na IA: {e}")
