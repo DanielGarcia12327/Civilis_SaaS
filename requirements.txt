@@ -1,3 +1,4 @@
+# Atualização forçada
 streamlit
 groq
 langchain
@@ -9,3 +10,4 @@ pypdf
 sentence-transformers
 python-dotenv
 huggingface-hub
+
