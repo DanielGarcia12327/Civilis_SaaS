@@ -39,3 +39,4 @@ if prompt:
     with st.expander("Fontes citadas"):
         for doc in res["source_documents"]:
             st.write(f"- {os.path.basename(doc.metadata['source'])}")
+
