@@ -1,13 +1,10 @@
-# Atualização forçada
-streamlit
-groq
-langchain
-langchain-community
-langchain-groq
-langchain-huggingface
-faiss-cpu
-pypdf
-sentence-transformers
-python-dotenv
-huggingface-hub
-
+streamlit==1.31.0
+langchain==0.1.0
+langchain-community==0.0.10
+langchain-groq==0.0.1
+langchain-huggingface==0.0.1
+faiss-cpu==1.7.4
+pypdf==4.0.0
+sentence-transformers==2.3.1
+groq==0.4.2
+python-dotenv==1.0.1
