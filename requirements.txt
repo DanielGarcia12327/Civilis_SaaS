@@ -1,3 +1,4 @@
+# Update forçada v2
 streamlit
 langchain
 langchain-community
@@ -8,3 +9,4 @@ pypdf
 sentence-transformers
 groq
 python-dotenv
+
